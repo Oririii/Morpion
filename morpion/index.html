@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f3ed">
+  <title>Morpion · À vous de jouer</title>
+  <style>
+    :root { color-scheme: light; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #203f3a; background: #f5f3ed; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; min-height: 100svh; display: grid; place-items: center; padding: 28px 20px; }
+    main { width: min(100%, 420px); text-align: center; }
+    .eyebrow { margin: 0 0 12px; font-size: 12px; font-weight: 700; letter-spacing: .18em; text-transform: uppercase; color: #66766e; }
+    h1 { margin: 0; font-size: clamp(44px, 10vw, 60px); letter-spacing: -.055em; line-height: 1.1; }
+    .intro { margin: 14px 0 26px; color: #66766e; font-size: 15px; }
+    .players { display: flex; justify-content: center; gap: 12px; }
+    .player { padding: 10px 18px; border: 1px solid #d7ddd4; border-radius: 999px; font-size: 14px; background: #faf9f5; }
+    .player strong { margin-right: 7px; font-size: 17px; }
+    .player.active { border-color: #203f3a; background: #203f3a; color: white; }
+    #status { min-height: 28px; margin: 24px 0 18px; font-size: 19px; font-weight: 650; }
+    .board { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; padding: 12px; border: 1px solid #dde1d7; border-radius: 24px; background: #e8ebe2; }
+    .cell { aspect-ratio: 1; min-width: 0; padding: 0; border: 0; border-radius: 14px; background: #fffefb; color: #24665b; font: 650 clamp(42px, 15vw, 70px)/1 system-ui, sans-serif; cursor: pointer; box-shadow: 0 2px 2px #203f3a08; transition: background .15s, transform .15s; }
+    .cell[data-symbol="O"] { color: #c16b40; }
+    .cell:not(:disabled):hover { background: #f2f6ed; transform: translateY(-2px); }
+    .cell:disabled { cursor: default; opacity: 1; }
+    .cell.winner { background: #cce5d5; }
+    button:focus-visible { outline: 3px solid #c16b40; outline-offset: 4px; }
+    #restart { margin-top: 24px; width: 100%; padding: 16px 22px; border: 0; border-radius: 14px; background: #203f3a; color: #fffefb; font: 650 15px system-ui, sans-serif; cursor: pointer; }
+    #restart:hover { background: #31584e; }
+    .rule { margin: 20px 0 0; font-size: 13px; color: #66766e; }
+    @media (prefers-reduced-motion: reduce) { .cell { transition: none; } }
+  </style>
+</head>
+<body>
+  <main>
+    <p class="eyebrow">Deux joueurs · Un écran</p>
+    <h1>Morpion</h1>
+    <p class="intro">Un petit duel, trois symboles à aligner.</p>
+    <div class="players" aria-label="Les deux joueurs">
+      <span class="player active" id="player-x"><strong>X</strong> Joueur 1</span>
+      <span class="player" id="player-o"><strong>O</strong> Joueur 2</span>
+    </div>
+    <p id="status" role="status" aria-live="polite" aria-atomic="true">Au tour de X</p>
+    <div class="board" role="group" aria-label="Grille de morpion : 3 lignes et 3 colonnes">
+      <button class="cell" type="button" aria-label="Case 1, ligne 1, colonne 1, vide"></button>
+      <button class="cell" type="button" aria-label="Case 2, ligne 1, colonne 2, vide"></button>
+      <button class="cell" type="button" aria-label="Case 3, ligne 1, colonne 3, vide"></button>
+      <button class="cell" type="button" aria-label="Case 4, ligne 2, colonne 1, vide"></button>
+      <button class="cell" type="button" aria-label="Case 5, ligne 2, colonne 2, vide"></button>
+      <button class="cell" type="button" aria-label="Case 6, ligne 2, colonne 3, vide"></button>
+      <button class="cell" type="button" aria-label="Case 7, ligne 3, colonne 1, vide"></button>
+      <button class="cell" type="button" aria-label="Case 8, ligne 3, colonne 2, vide"></button>
+      <button class="cell" type="button" aria-label="Case 9, ligne 3, colonne 3, vide"></button>
+    </div>
+    <button id="restart" type="button">Nouvelle partie</button>
+    <p class="rule">Alignez 3 symboles à l’horizontale, à la verticale ou en diagonale.</p>
+  </main>
+  <script>
+    "use strict";
+    const cells = Array.from(document.querySelectorAll(".cell"));
+    const status = document.getElementById("status");
+    const playerX = document.getElementById("player-x");
+    const playerO = document.getElementById("player-o");
+    const winningLines = [
+      [0, 1, 2], [3, 4, 5], [6, 7, 8],
+      [0, 3, 6], [1, 4, 7], [2, 5, 8],
+      [0, 4, 8], [2, 4, 6]
+    ];
+    let board;
+    let currentPlayer;
+    let finished;
+
+    function render() {
+      cells.forEach((cell, index) => {
+        cell.textContent = board[index];
+        cell.dataset.symbol = board[index];
+        cell.disabled = finished || board[index] !== "";
+        cell.setAttribute("aria-label", `Case ${index + 1}, ligne ${Math.floor(index / 3) + 1}, colonne ${index % 3 + 1}, ${board[index] || "vide"}`);
+      });
+      playerX.classList.toggle("active", !finished && currentPlayer === "X");
+      playerO.classList.toggle("active", !finished && currentPlayer === "O");
+    }
+
+    function play(index) {
+      if (finished || board[index] !== "") return;
+      board[index] = currentPlayer;
+      const winningLine = winningLines.find(line => line.every(i => board[i] === currentPlayer));
+      if (winningLine) {
+        finished = true;
+        status.textContent = `${currentPlayer} a gagné !`;
+        winningLine.forEach(i => cells[i].classList.add("winner"));
+      } else if (board.every(symbol => symbol !== "")) {
+        finished = true;
+        status.textContent = "Match nul !";
+      } else {
+        currentPlayer = currentPlayer === "X" ? "O" : "X";
+        status.textContent = `Au tour de ${currentPlayer}`;
+      }
+      render();
+    }
+
+    function newGame() {
+      board = Array(9).fill("");
+      currentPlayer = "X";
+      finished = false;
+      status.textContent = "Au tour de X";
+      cells.forEach(cell => cell.classList.remove("winner"));
+      render();
+    }
+
+    cells.forEach((cell, index) => cell.addEventListener("click", () => play(index)));
+    document.getElementById("restart").addEventListener("click", newGame);
+    newGame();
+  </script>
+</body>
+</html>
